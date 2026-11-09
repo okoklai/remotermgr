@@ -1,0 +1,24 @@
+[Unit]
+Description=RemoteMgr C/S server (standalone binary)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=acaiplus
+Group=acaiplus
+WorkingDirectory=/opt/remotemgrserver
+Environment=PYTHONUNBUFFERED=1
+Environment=TZ=Asia/Shanghai
+Environment=REMOTEMGR_DATA=/opt/remotemgrserver/dat
+Environment=REMOTEMGR_ENV=/opt/remotemgrserver/.env
+ExecStart=/opt/remotemgrserver/remotemgr-server
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

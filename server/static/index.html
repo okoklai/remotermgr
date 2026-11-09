@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RemoteMgr · 远程连接集中管理</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div id="login" class="login-wrap">
+  <div class="login-card">
+    <div class="login-title">RemoteMgr</div>
+    <div class="login-sub">远程连接集中管理 · C/S 版</div>
+    <form id="loginForm">
+      <label>账号<input id="loginUser" autocomplete="username" value="admin" required></label>
+      <label>密码<input id="loginPass" type="password" autocomplete="current-password" required></label>
+      <div id="loginError" class="form-error"></div>
+      <button type="submit" class="btn primary block">登 录</button>
+    </form>
+    <div class="login-hint">首次登录请使用部署时生成的初始密码，登录后请立即修改。</div>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span> RemoteMgr <span class="brand-sub">集中管理</span></div>
+    <div class="top-actions">
+      <button class="btn ghost" data-act="settings">系统设置</button>
+      <button class="btn ghost" data-act="users">用户管理</button>
+      <button class="btn ghost" data-act="audit">审计日志</button>
+      <button class="btn ghost" data-act="export">导出备份</button>
+      <button class="btn ghost" data-act="import">导入备份</button>
+      <button class="btn ghost" data-act="passwd">修改密码</button>
+      <span class="who" id="who"></span>
+      <button class="btn ghost" data-act="logout">退出</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="side-head">
+        <span>分组</span>
+        <span class="side-btns">
+          <button class="btn tiny" data-act="group-add" title="新增分组">＋</button>
+          <button class="btn tiny" data-act="group-root" title="新增根分组">＋根</button>
+          <button class="btn tiny" data-act="group-rename" title="重命名">✎</button>
+          <button class="btn tiny danger-text" data-act="group-del" title="删除分组">✕</button>
+        </span>
+      </div>
+      <div id="tree" class="tree"></div>
+      <div class="side-foot">拖拽主机到分组可移动</div>
+    </aside>
+
+    <main class="content">
+      <div class="toolbar">
+        <input id="search" class="input" placeholder="搜索名称 / 地址 / 账号 / 备注（* 显示全部）">
+        <button class="btn" data-act="search">搜索</button>
+        <button class="btn" data-act="probe" title="由本机 Agent 从你的电脑发起 TCP 探测（服务端不参与）；需先运行 start-agent.bat">在线检测（本机）</button>
+        <button class="btn primary" data-act="host-add">＋ 新增主机</button>
+        <button class="btn ghost" data-act="refresh">刷新</button>
+        <span class="count" id="count"></span>
+      </div>
+      <div class="table-wrap">
+        <table class="hosts">
+          <thead><tr>
+            <th style="width:90px">类型</th><th style="width:170px">名称</th>
+            <th style="width:170px">地址</th><th style="width:70px">端口</th>
+            <th style="width:120px">账号</th><th style="width:70px">状态</th>
+            <th>备注</th><th style="width:280px">操作</th>
+          </tr></thead>
+          <tbody id="hostRows"></tbody>
+        </table>
+        <div id="empty" class="empty hidden">暂无主机，点「新增主机」开始录入，或用「导入」迁移旧数据。</div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="statusbar"><span id="status">就绪</span><span id="dbInfo"></span></footer>
+</div>
+
+<div id="modal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head"><h3 id="modalTitle"></h3><button id="modalClose" class="btn tiny">✕</button></div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+<div id="toast" class="toast hidden"></div>
+<div id="hostTip" class="host-tip hidden"></div>
+<input id="fileInput" type="file" accept="application/json,.json" class="hidden">
+
+<script src="/static/app.js"></script>
+</body>
+</html>

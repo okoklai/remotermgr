@@ -1,0 +1,23 @@
+[Unit]
+Description=RemoteMgr C/S server (REST API + WebUI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=acaiplus
+Group=acaiplus
+WorkingDirectory=/home/acaiplus/remotemgr/server
+Environment=PYTHONUNBUFFERED=1
+Environment=TZ=Asia/Shanghai
+Environment=REMOTEMGR_HOME=/home/acaiplus/remotemgr
+ExecStart=/home/acaiplus/remotemgr/venv/bin/waitress-serve --listen=0.0.0.0:8800 --threads=8 app:app
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

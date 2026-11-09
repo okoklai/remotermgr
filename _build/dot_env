@@ -1,0 +1,25 @@
+# RemoteMgr · 独立二进制部署 (/opt/remotemgrserver)
+# SQLite 数据库位于 ./dat（见下方 REMOTEMGR_DATA）。如需换成云端 MySQL/PostgreSQL，
+# 把 DATABASE_URL 改成对应连接串即可（详见 README 第四节），代码无需改动。
+
+DATABASE_URL=sqlite:////opt/remotemgrserver/dat/remotemgr.db
+
+BIND_HOST=0.0.0.0
+BIND_PORT=8800
+CORS_ORIGINS=*
+
+TOKEN_TTL=43200
+TICKET_TTL=60
+PROBE_TIMEOUT_MS=500
+WOL_BROADCAST=255.255.255.255
+AGENT_PORT=17860
+
+# 运行时数据目录（SQLite 库 + master.key + secret.key）。
+# 二进制冻结后 DATA_DIR 默认是 <二进制所在目录>/data，这里显式指到 ./dat。
+REMOTEMGR_DATA=/opt/remotemgrserver/dat
+REMOTEMGR_ENV=/opt/remotemgrserver/.env
+
+# 仅首次建库使用：BOOTSTRAP_PASSWORD 留空则随机生成并写入 dat/initial_admin.txt（0600）；
+# 也可直接写死一个初始密码。
+BOOTSTRAP_ADMIN=admin
+BOOTSTRAP_PASSWORD=

@@ -1,0 +1,32 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyc
+
+# ---- Virtual environments ----
+venv/
+.venv/
+.venv_agent/
+
+# ---- PyInstaller build output ----
+agent/build/
+agent/dist/
+*.spec
+
+# ---- Local data / secrets / databases (do NOT commit) ----
+data/
+*.db
+*.sqlite
+*.key
+.env
+
+# ---- Archives & transient build artifacts ----
+*.tar.gz
+*.tgz
+*.bak.*
+
+# ---- Editor / OS ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

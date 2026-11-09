@@ -1,0 +1,8 @@
+{
+  "note": "RemoteMgr Agent 连接配置：把本文件复制为 config.json，放在 remotemgr-agent.exe 同目录（或 agent/ 源码目录）即生效。优先级：命令行 --server > 环境变量 REMOTEMGR_SERVER > 本文件 > ~/.remotemgr_agent.json > 内置默认。",
+  "server": "http://192.168.10.121:8800",
+  "agent_port": 17860,
+  "token": "",
+  "user": "",
+  "password": ""
+}
