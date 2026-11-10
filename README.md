@@ -1,6 +1,6 @@
 # RemoteMgr · C/S 版
 
-把 [dwj0/Remote-management](https://github.com/dwj0/Remote-management)（VC2017 / MFC + 本地 SQLite 的单机远程连接管理器）改造成 **C/S 架构 + 云端数据库 + WebUI 管理** 的 Linux 后端程序。
+把 [dwj0/Remote-management](https://github.com/dwj0/Remote-management)（VC2017 / MFC + 本地 SQLite 的单机远程连接管理器）改造成 **C/S 架构 + 本地 SQLite + WebUI 管理** 的 Linux 后端程序。
 
 服务端部署在 `192.168.10.121`（Ubuntu 24.04.5 / Python 3.12），浏览器和本地 Agent 都是客户端。
 
@@ -10,7 +10,7 @@
 
 ```
 浏览器 WebUI ─┐
-本地 Agent  ──┼── HTTPS/REST + 登录令牌 ──> Linux 服务端 (8800) ──> 云端 MySQL / PostgreSQL
+本地 Agent  ──┼── HTTPS/REST + 登录令牌 ──> Linux 服务端 (8800) ──> 本地 SQLite 数据库
 旧库迁移工具 ─┘                              │
                                             └─ master.key 只存服务端本地
 ```
@@ -57,7 +57,6 @@ remotemgr/
 ├─ agent/remotemgr_agent.py    # 本地连接 Agent（零第三方依赖）
 ├─ deploy/install.sh           # 一键安装 + systemd
 ├─ deploy/remotemgr.service
-├─ scripts/cloud_db_setup.sql  # 云端建库脚本
 └─ README.md
 ```
 
@@ -192,7 +191,7 @@ FTP 的 URL 前缀与端口来自 FlashFXP 官方「快速连接 / 站点管理�
 
 ⚠️ SSH 私钥有**两种互不冲突的来源**，优先级从高到低：① 表单上传 / 粘贴的私钥内容（加密存服务端数据库，换任何一台电脑都能用）；② 「或：私钥文件」里的**本机路径字符串**（私钥正文始终留在运行 Agent 的那台机器上，换电脑要保证路径一致）；③ 两者都空时交给 Pageant / ssh-agent 已加载的密钥或客户端交互输入。路径模式使用 `/browse` 让 Agent 弹本机文件框，**只返回路径、不读取正文**。
 
-⚠️ 这些路径填的是**运行 Agent 的那台机器**上的路径。设置存在云端、会下发给所有 Agent；如果多台机器路径不同，可在本地配置文件加 `client_paths` 覆盖：
+⚠️ 这些路径填的是**运行 Agent 的那台机器**上的路径。设置存在服务端、会下发给所有 Agent；如果多台机器路径不同，可在本地配置文件加 `client_paths` 覆盖：
 
 ```json
 {"client_paths": {"radmin_path": "D:\\tools\\radmin.exe"}}
@@ -238,7 +237,7 @@ FTP 的 URL 前缀与端口来自 FlashFXP 官方「快速连接 / 站点管理�
 
 **SSH 密钥对登录 · 私钥存服务端数据库**：在「编辑主机 → SSH 设置 → 认证方式 = 密钥对登录」里，直接选 `.ppk` / `.pem` / `.key` 文件或粘贴 PEM 内容，保存后：
 
-1. 浏览器读取文件文本，随主机表单一起提交；服务端校验格式标记与 64 KB 上限，用 `master.key` 做 AES-256-GCM 加密后写入 `rm_hosts.ssh_key_enc`。**主密钥只在服务端本机，云端库里只有密文**。
+1. 浏览器读取文件文本，随主机表单一起提交；服务端校验格式标记与 64 KB 上限，用 `master.key` 做 AES-256-GCM 加密后写入 `rm_hosts.ssh_key_enc`。**主密钥只在服务端本机，服务端数据库里只有密文**。
 2. `/api/hosts` 列表和编辑框只显示「已保存：文件名 · SHA-256 指纹」，**不回显、不下发私钥正文**；想替换就重新选文件，想删除点「清除已保存私钥」。
 3. 点「连接」时，一次性票据（60 秒、用完即焚）的兑换响应才把私钥正文连同 `ssh_key` 一起下发给本机 Agent；密码登录 / 非 SSH 记录拿到的永远是空对象。
 4. Agent 把正文写进 `tempfile.mkdtemp()`（0700）里的临时文件，POSIX 上 `chmod 0600`（OpenSSH 强制要求），再用这个路径替换 `%5` 或追加 `-i`。客户端启动 45 秒后删除文件与目录，Agent 退出时 `atexit` 再兜底清理一次。
