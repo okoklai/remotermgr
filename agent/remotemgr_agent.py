@@ -33,6 +33,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -54,15 +55,29 @@ def http_json(server: str, path: str, payload=None, token: str | None = None,
              timeout: int = 10) -> dict:
     url = server.rstrip("/") + path
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    headers = {"Accept": "application/json"}
+    # Cloudflare 会按客户端指纹拦截 urllib 默认的 "Python-urllib/x.y"
+    # （error 1010 / 403），必须显式带一个自定义 UA，否则所有 API 请求都被挡。
+    headers = {"Accept": "application/json",
+               "User-Agent": "RemoteMgrAgent/1.0"}
     if data is not None:
         headers["Content-Type"] = "application/json"
     if token:
         headers["Authorization"] = "Bearer " + token
     request = urllib.request.Request(url, data=data, headers=headers,
                                      method="POST" if data is not None else "GET")
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        result = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        # 服务端用 401/403 + JSON body 表达业务错误；Cloudflare 拦截也会落到这里。
+        # 把 body 里的中文原因读出来，避免只显示 "HTTP Error 403: Forbidden"。
+        detail = ""
+        try:
+            body = json.loads(exc.read().decode("utf-8", "replace"))
+            detail = str(body.get("error") or "")
+        except (ValueError, OSError, AttributeError):
+            pass
+        raise RuntimeError(detail or f"服务端 HTTP {exc.code}（{exc.reason}）") from exc
     if not result.get("ok"):
         raise RuntimeError(result.get("error", "服务端返回错误"))
     return result.get("data")
@@ -1340,9 +1355,10 @@ code{{background:#f0f2f5;padding:2px 5px;border-radius:4px}}</style></head><body
             return self._reply(page)
 
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    print(f"[agent] 监听 http://127.0.0.1:{port} ，服务端 {args.server}")
+    print(f"[agent] 监听 http://127.0.0.1:{port} ，服务端 {args.server}", flush=True)
     print("[agent] WebUI 点「连接」即可一键拉起本机客户端；"
-          "在线检测走 /probe（从本机发包），路径按钮走 /clients 与 /browse；Ctrl+C 退出")
+          "在线检测走 /probe（从本机发包），路径按钮走 /clients 与 /browse；Ctrl+C 退出",
+          flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
