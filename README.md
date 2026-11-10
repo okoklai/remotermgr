@@ -90,46 +90,7 @@ venv/bin/python server/app.py
 
 ---
 
-## 四、把数据库放到云端（重点）
-
-程序启动会自动建表，云端只需要先建库 + 账号（见 `scripts/cloud_db_setup.sql`）。
-
-**MySQL 8**
-
-```sql
-CREATE DATABASE remotemgr CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'remotemgr'@'%' IDENTIFIED BY '强密码';
-GRANT ALL PRIVILEGES ON remotemgr.* TO 'remotemgr'@'%';
-```
-
-**PostgreSQL**
-
-```sql
-CREATE USER remotemgr WITH PASSWORD '强密码';
-CREATE DATABASE remotemgr OWNER remotemgr ENCODING 'UTF8';
-```
-
-切换步骤：
-
-```bash
-sudo systemctl stop remotemgr
-# 编辑 ~/remotemgr/.env，取消注释并改成自己的连接串：
-#   DATABASE_URL=mysql+pymysql://remotemgr:PASS@HOST:3306/remotemgr?charset=utf8mb4
-#   DATABASE_URL=postgresql+psycopg2://remotemgr:PASS@HOST:5432/remotemgr
-# 把已有的 SQLite 数据搬过去（幂等，可重复执行）：
-~/remotemgr/venv/bin/python ~/remotemgr/server/manage.py copy-db \
-  --target 'mysql+pymysql://remotemgr:PASS@HOST:3306/remotemgr?charset=utf8mb4'
-sudo systemctl start remotemgr
-curl http://127.0.0.1:8800/api/health      # 应返回 "database": "mysql"
-```
-
-密码里有 `@ : / ? # %` 时要做 URL 编码。云数据库要放行 192.168.10.121 的出站 IP（白名单填它的公网出口 IP），并优先用 TLS 连接串。
-
-> **必须备份 `~/remotemgr/data/master.key` 和 `secret.key`**：密钥丢了，云端库里的密码和 SSH 私钥就再也解不开了。这两个文件不要放进数据库、不要提交到仓库。
-
----
-
-## 五、迁移旧版 User.db
+## 四、迁移旧版 User.db
 
 ```bash
 cd ~/remotemgr
@@ -144,7 +105,7 @@ venv/bin/python server/manage.py import-legacy /path/to/User.db
 
 ---
 
-## 六、本地连接 Agent（一键直连）
+## 五、本地连接 Agent（一键直连）
 
 ```bash
 # 在你自己电脑上（Windows / Linux 都行，Python 3.9+，零依赖）
@@ -283,7 +244,7 @@ FTP 的 URL 前缀与端口来自 FlashFXP 官方「快速连接 / 站点管理�
 4. Agent 把正文写进 `tempfile.mkdtemp()`（0700）里的临时文件，POSIX 上 `chmod 0600`（OpenSSH 强制要求），再用这个路径替换 `%5` 或追加 `-i`。客户端启动 45 秒后删除文件与目录，Agent 退出时 `atexit` 再兜底清理一次。
 5. 若记录没保存私钥内容，则退回「或：私钥文件」里的本机路径；两者都空则交给 Pageant / ssh-agent。数据库私钥优先，所以换一台电脑打开 WebUI 也能连。
 
-私钥明文只短暂存在于浏览器内存、服务端进程内存、票据响应体和本机临时文件里。**票据响应走的是 HTTP 时私钥和已保存的密码一样可能被内网抓包，务必按第八节套 HTTPS / VPN**。带口令的私钥仍需客户端弹窗输入口令（Agent 不会把口令写进命令行）。PuTTY 只认 `.ppk`，Linux `ssh` 只认 OpenSSH 格式，两者不通用，需要时用 PuTTYgen 转换；备份 / 恢复时私钥以密文形式进 JSON，恢复必须在同一份 `master.key` 下进行。
+私钥明文只短暂存在于浏览器内存、服务端进程内存、票据响应体和本机临时文件里。**票据响应走的是 HTTP 时私钥和已保存的密码一样可能被内网抓包，务必按第七节套 HTTPS / VPN**。带口令的私钥仍需客户端弹窗输入口令（Agent 不会把口令写进命令行）。PuTTY 只认 `.ppk`，Linux `ssh` 只认 OpenSSH 格式，两者不通用，需要时用 PuTTYgen 转换；备份 / 恢复时私钥以密文形式进 JSON，恢复必须在同一份 `master.key` 下进行。
 
 RDP 与 Radmin 一样是**一键直连**：WebUI 点「连接」只向本地 Agent 发一次性票据，不再弹确认框、不再下载 `.rdp` 文件。Linux 服务端生成不了 Windows DPAPI 加密块，而且 `mstsc` 命令行只能传地址/宽高/全屏，传不了色深、桌面背景、磁盘映射、远程音频和已保存的密码——所以 Windows Agent 在本机生成一份临时 `.rdp` 交给 `mstsc.exe`，用完即删。这个文件**不是浏览器下载物**，用户无需保存或双击。
 把密码放在命令行参数里（PuTTY / sshpass / xfreerdp / FlashFXP URL）会被同机其他进程看到，只建议在可信的个人电脑上使用。密钥对登录的命令行里只有私钥**路径**（本机路径，或数据库私钥落地后的临时路径）、没有任何口令或密码，在这一点上更安全。FTP 密码与 Web Basic 密码都会出现在 URL 里：Agent 回显到 `/connect` 页面和日志时会替换成 `******`，但客户端进程参数仍是明文，**Web 记录请优先用网站自带登录页而不是 Basic 认证**。匿名 FTP 和普通 Web 记录压根不会从服务端拿到密码。
@@ -294,7 +255,7 @@ RDP 与 Radmin 一样是**一键直连**：WebUI 点「连接」只向本地 Age
 
 ---
 
-## 七、主要 API
+## 六、主要 API
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -316,7 +277,7 @@ RDP 与 Radmin 一样是**一键直连**：WebUI 点「连接」只向本地 Age
 
 ---
 
-## 八、安全建议
+## 七、安全建议
 
 1. **上 HTTPS**：现在内网是 HTTP。对外访问请套 Nginx/Caddy 反代 + TLS，或只在 VPN / 内网用。
 2. **改初始密码**：登录后立刻在「修改密码」里改掉；`.env` 里的 `BOOTSTRAP_PASSWORD` 只是首次建号用。
@@ -330,7 +291,7 @@ RDP 与 Radmin 一样是**一键直连**：WebUI 点「连接」只向本地 Age
 
 ---
 
-## 九（附）、当前部署实例（2026-11-09）
+## 八（附）、当前部署实例（2026-11-09）
 
 | 项 | 值 |
 |---|---|
@@ -340,7 +301,7 @@ RDP 与 Radmin 一样是**一键直连**：WebUI 点「连接」只向本地 Age
 | 服务 | `remotemgr.service`，active + 开机自启；日志 `journalctl -u remotemgr -f` |
 | 代码目录 | `~/remotemgr`（本机对应 `D:\rmd\remotemgr`） |
 | 密钥 | `~/remotemgr/data/master.key`、`secret.key`（0600），需单独备份 |
-| 数据库 | 当前为本地 SQLite `~/remotemgr/data/remotemgr.db`；切云端见第四节 |
+| 数据库 | 当前为本地 SQLite `~/remotemgr/data/remotemgr.db` |
 | 安装附加项 | 补装 `python3.12-venv`；pip 走阿里云镜像；systemd unit 设了 `TZ=Asia/Shanghai` |
 | 验证 | `scripts/smoke_test.py` 13 项全通过（登录/CRUD/加密/票据/**私钥加密入库与下发**/**FTP 与 Web 记录**/**Web 完整 URL 地址**/**WinSCP 记录**/导出/审计/WebUI 静态资源） |
 
@@ -348,7 +309,7 @@ RDP 与 Radmin 一样是**一键直连**：WebUI 点「连接」只向本地 Age
 
 ---
 
-## 十、已知边界
+## 九、已知边界
 
 - 没有重写 MFC 客户端；老客户端不再直连数据库，改由 WebUI + Agent 承担。
 - Radmin 自动填登录窗已按原版 `FindWindow` / `GetDlgItem` / `WM_SETTEXT` 移植，但依赖 Radmin Viewer 的窗口标题与控件 ID（2.2 / 3.x 中文版）；版本或语言不匹配时会退回手填。
