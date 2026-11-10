@@ -492,8 +492,8 @@
       }
       return (browser ? browser + ' ' : '系统默认浏览器打开 ') + '"' + webUrl + '"';
     }
-    return 'vncviewer ' + tipTarget(host) +
-      (host.protocol === 'tightvnc' ? ' -password=******' : '');
+    return 'vncviewer ' +
+      (host.account ? '-UserName=' + host.account + ' ' : '') + tipTarget(host);
   }
 
   function tipRdpLines(host, eff) {
@@ -744,7 +744,10 @@
     var defaults = HOST_OPTION_DEFAULTS[host.protocol] || {};
     Object.keys(defaults).forEach(function (k) { cur[k] = defaults[k]; });
     Object.keys(host.options || {}).forEach(function (k) { cur[k] = host.options[k]; });
-    var protoOpts = Object.keys(PROTO_LABEL).map(function (key) {
+    var protoOpts = Object.keys(PROTO_LABEL).filter(function (key) {
+      // TightVNC 已由 RealVNC 平替；仅编辑历史 tightvnc 记录时保留该选项。
+      return key !== 'tightvnc' || host.protocol === 'tightvnc';
+    }).map(function (key) {
       return '<option value="' + key + '"' + (host.protocol === key ? ' selected' : '') + '>' +
         PROTO_LABEL[key] + '</option>';
     }).join('');
@@ -1101,7 +1104,8 @@
       rdp: 'mstsc /v:' + target,
       radmin: 'radmin.exe /connect:' + target,
       ssh: sshCmd,
-      realvnc: 'vncviewer ' + target, tightvnc: 'vncviewer ' + target + ' -password=******',
+      realvnc: 'vncviewer ' + (host.account ? '-UserName=' + host.account + ' ' : '') + target,
+      tightvnc: 'vncviewer ' + (host.account ? '-UserName=' + host.account + ' ' : '') + target,
       ftp: 'flashfxp.exe "' + url + '"',
       web: (String(state.settings.browser_path || '系统默认浏览器').trim()) + ' "' + url + '"',
       winscp: 'WinSCP.exe "' + url + '"'

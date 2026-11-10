@@ -28,7 +28,7 @@
 | ConfigTab / GroupTab / HostTab | `rm_settings` / `rm_groups` / `rm_hosts`（+ `rm_users` / `rm_audit`） |
 | 多级分组、拖拽移动、改名 | WebUI 分组树 + 拖拽，级联删除需确认 |
 | RDP / Radmin / SSH / RealVNC / TightVNC | `protocol` 字段，默认端口 3389/4899/22/5900/5900；另新增 **FTP（FlashFXP）** 21、**Web（HTTP/HTTPS）** 443 与 **WinSCP（SFTP/FTP）** 22 三类记录 |
-| 双击调用客户端并自动填密码 | WebUI「连接」→ 一次性票据 → 本地 Agent 直接拉起客户端（RDP 走 DPAPI，Radmin 自动填登录窗，SSH 支持密码 / 密钥对、私钥可加密入库，VNC 命令行传密码，FTP 用 FlashFXP URL，Web 直接打开浏览器）；**所有协议统一一键直连，不再提供「下载 .rdp 文件」入口** |
+| 双击调用客户端并自动填密码 | WebUI「连接」→ 一次性票据 → 本地 Agent 直接拉起客户端（RDP 走 DPAPI，Radmin 自动填登录窗，SSH 支持密码 / 密钥对、私钥可加密入库，VNC 自动填 RealVNC 身份验证窗口，FTP 用 FlashFXP URL，Web 直接打开浏览器）；连接结果页不再自动关闭，客户端秒退会回显退出码与命令行；**所有协议统一一键直连，不再提供「下载 .rdp 文件」入口** |
 | 在线扫描（TCP connect） | `POST /probe` 由**本地 Agent 从操作员机器**并发探测，是唯一判定来源；服务端不发包、没有 `/api/hosts/probe` 接口；Agent 不在线时状态显示「—」并提示启动，不会误报「离线」 |
 | Ping / WOL 唤醒 | WOL 由服务端发 UDP 广播；Ping 用「命令」按钮复制 |
 | 主机搜索 | 名称 / 地址 / 账号 / 备注模糊搜索，`*` 显示全部 |
@@ -123,7 +123,7 @@ python remotemgr_agent.py serve       # 保持运行，WebUI 点「连接」即�
 | RDP | 点「连接」直接拉起 `mstsc.exe`：Agent 在**本机**生成临时 `.rdp`（`CryptProtectData` 写入 `password 51:b` 自动登录，并按记录写入分辨率/色深/背景/磁盘/音频），8 秒后删掉；浏览器不下载任何文件 | `xfreerdp /v:host:port /u:user /p:pass` |
 | SSH | **密码**：PuTTY `-ssh -l user -pw pass -P port host`；**密钥对**：`-ssh -l user -P port -i <私钥> host`（不传 `-pw`；私钥存数据库时 `<私钥>` 是 Agent 落地、用完即删的 0600 临时文件）；模板留空时自动拼接，找不到 PuTTY 则给出命令 | 密码走 `sshpass -p pass ssh ...`；密钥对走 `ssh -p port -i <私钥> user@host`；没装 sshpass 则给出可复制命令 |
 | Radmin | `radmin.exe /connect:host[:port] [模式] /8bpp｜/16bpp｜/24bpp [/fullscreen]`，色深按记录配置，并自动往「Radmin 安全性」窗口填账号密码 | 不支持（Radmin 只有 Windows 客户端） |
-| VNC | `vncviewer host:port`（TightVNC 额外传 `-password=`） | `vncviewer host:port` |
+| VNC | **统一用 RealVNC Viewer**：`vncviewer [-UserName=账号] host:port`。RealVNC 没有明文密码参数，Agent 等「身份验证」窗口出现后自动填入密码并回车（历史 `tightvnc` 记录也按此方式连接，无需改数据） | Linux 仍为 `vncviewer host:port`，需手动输入密码 |
 | FTP（FlashFXP） | 按记录拼 `ftp://` / `ftps://` / `ftpes://` / `sftp://` URL 交给 `flashfxp.exe`，可带 `-max/-min/-tray` 与 `-localpath=`；匿名登录不传账号密码 | 不支持（FlashFXP 是 Windows 客户端）；Agent 会回显脱敏 URL 供手工打开 |
 | Web（HTTP/HTTPS） | 地址栏**可直接粘贴完整 URL**（含端口、路径、`?参数`、`#锚点`）原样打开；只填主机名时才按「页面协议 + 端口 + URL 路径」拼接。用系统默认浏览器或指定浏览器打开，可加自定义参数（如 `--incognito`）。默认**不传密码**，选「URL 内嵌 Basic 认证」才把账号密码写进 URL | 同左，`webbrowser.open()` 交给桌面默认浏览器 |
 | WinSCP（SFTP/FTP） | 按记录拼 `sftp://` / `scp://` / `ftp://` / `ftps://` / `webdav(s)://` 会话 URL 交给 `WinSCP.exe`，可带 `/minimized` / `/newinstance`；匿名登录自动合成 `anonymous:anonymous`（保存的密码不下发） | 不支持（WinSCP 是 Windows 客户端）；Agent 会回显脱敏 URL 供手工打开 |
@@ -182,7 +182,7 @@ FTP 的 URL 前缀与端口来自 FlashFXP 官方「快速连接 / 站点管理�
 |---|---|
 | `radmin_path` | PATH → Agent 同目录 → 常见安装目录 / 常用下载目录 |
 | `ssh_path` | PATH → Agent 同目录 → PuTTY 默认安装目录 |
-| `vnc_path` | PATH → Agent 同目录 → TightVNC / RealVNC 默认目录 |
+| `vnc_path` | PATH → Agent 同目录 → RealVNC Viewer 默认安装目录；只认 `vncviewer.exe`，若指向 `tvnviewer.exe` 会明确报错提示改路径 |
 | `flashfxp_path` | PATH → Agent 同目录 → FlashFXP 默认安装目录 |
 | `winscp_path` | PATH → Agent 同目录 → WinSCP 默认安装目录（Program Files / x86） |
 | `browser_path` | 留空 = 系统默认浏览器（`webbrowser.open()`）；填写 / 自动探测后按指定浏览器启动 |

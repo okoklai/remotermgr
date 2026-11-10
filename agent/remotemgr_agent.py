@@ -200,9 +200,9 @@ CLIENT_CANDIDATES = {
                   r"C:\Program Files (x86)\PuTTY\putty.exe"),
     },
     "vnc_path": {
-        "label": "VNC Viewer", "names": ("vncviewer.exe", "tvnviewer.exe", "vncviewer"),
-        "paths": (r"C:\Program Files\TightVNC\tvnviewer.exe",
-                  r"C:\Program Files\RealVNC\VNC Viewer\vncviewer.exe"),
+        "label": "RealVNC Viewer", "names": ("vncviewer.exe", "vncviewer"),
+        "paths": (r"C:\Program Files\RealVNC\VNC Viewer\vncviewer.exe",
+                  r"C:\Program Files (x86)\RealVNC\VNC Viewer\vncviewer.exe"),
     },
     "flashfxp_path": {
         "label": "FlashFXP", "names": ("flashfxp.exe",),
@@ -329,8 +329,159 @@ def _radmin_autologin(address: str, account: str, password: str, wait_s: float =
     print("[agent] Radmin 登录窗口已自动填写", flush=True)
 
 
+def _win32_keyboard(events) -> int:
+    """Send (virtual key, unicode scan, flags) tuples via SendInput.
+
+    KEYEVENTF_UNICODE types characters directly, so passwords containing
+    + ^ % ~ ( ) { } need no escaping and cannot trigger UI shortcuts.
+    """
+    from ctypes import wintypes
+
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [("dx", wintypes.LONG), ("dy", wintypes.LONG),
+                    ("mouseData", wintypes.DWORD), ("dwFlags", wintypes.DWORD),
+                    ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+    class KEYBDINPUT(ctypes.Structure):
+        _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD),
+                    ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD),
+                    ("dwExtraInfo", ctypes.c_size_t)]
+
+    class INPUTUNION(ctypes.Union):
+        _fields_ = [("mi", MOUSEINPUT), ("ki", KEYBDINPUT)]
+
+    class INPUT(ctypes.Structure):
+        _fields_ = [("type", wintypes.DWORD), ("u", INPUTUNION)]
+
+    u = ctypes.windll.user32
+    arr = (INPUT * len(events))()
+    for i, (vk, scan, flags) in enumerate(events):
+        arr[i].type = 1                                  # INPUT_KEYBOARD
+        arr[i].u.ki = KEYBDINPUT(vk, scan & 0xFFFF, flags, 0, 0)
+    u.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
+    u.SendInput.restype = wintypes.UINT
+    return u.SendInput(len(arr), arr, ctypes.sizeof(INPUT))
+
+
+def _win32_type_password(text: str, submit: bool = True) -> bool:
+    """Type a password into the focused control and press Enter."""
+    KEYEVENTF_UNICODE, KEYEVENTF_KEYUP = 0x0004, 0x0002
+    events = []
+    for ch in text:
+        code = ord(ch)
+        events.append((0, code, KEYEVENTF_UNICODE))
+        events.append((0, code, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP))
+    if submit:
+        events.append((0x0D, 0, 0))                      # VK_RETURN
+        events.append((0x0D, 0, KEYEVENTF_KEYUP))
+    return _win32_keyboard(events) == len(events)
+
+
+def _realvnc_autologin(address: str, password: str, wait_s: float = 12.0):
+    """Fill RealVNC Viewer 5-7's owner-drawn authentication dialog.
+
+    Unlike Radmin there are no standard Edit controls, so WM_SETTEXT does not
+    work. Wait for the dialog, bring it forward, verify the foreground window
+    really belongs to RealVNC (never spray a password into another app), then
+    type the password and press Enter. Best effort, like the Radmin helper.
+    """
+    if not IS_WINDOWS or not password:
+        return
+    from ctypes import wintypes
+    u = ctypes.windll.user32
+    WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND,
+                                     wintypes.LPARAM)
+    u.IsWindowVisible.argtypes = [wintypes.HWND]
+    u.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    u.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    u.EnumWindows.argtypes = [WNDENUMPROC, wintypes.LPARAM]
+    u.GetForegroundWindow.restype = wintypes.HWND
+    u.SetForegroundWindow.argtypes = [wintypes.HWND]
+
+    def window_title(hwnd) -> str:
+        length = u.GetWindowTextLengthW(hwnd)
+        if not length:
+            return ""
+        buf = ctypes.create_unicode_buffer(length + 1)
+        u.GetWindowTextW(hwnd, buf, length + 1)
+        return buf.value
+
+    def visible_windows():
+        found = []
+
+        def collect(hwnd, _lparam):
+            if u.IsWindowVisible(hwnd):
+                found.append((hwnd, window_title(hwnd)))
+            return True
+
+        u.EnumWindows(WNDENUMPROC(collect), 0)
+        return found
+
+    auth_marks = ("身份验证", "身份驗證", "Authentication", "Authentification")
+    viewer_marks = ("RealVNC Viewer", "VNC Viewer")
+    deadline = time.time() + wait_s
+    hwnd = None
+    while time.time() < deadline and not hwnd:
+        windows = visible_windows()
+        for h, title in windows:
+            if any(mark in title for mark in auth_marks):
+                hwnd = h
+                break
+        if not hwnd:
+            # The auth dialog may be an owned child window; focusing the main
+            # Viewer window still puts the modal dialog and its focused
+            # password box in front.
+            for h, title in windows:
+                if any(mark in title for mark in viewer_marks):
+                    hwnd = h
+                    break
+        if not hwnd:
+            time.sleep(0.25)
+    if not hwnd:
+        print("[agent] 未等到 RealVNC 身份验证窗口，需手动输入密码", flush=True)
+        return
+
+    # The browser may still own the foreground right after the click, so retry
+    # a few times; but NEVER type into a window that is not RealVNC.
+    for _attempt in range(3):
+        u.SetForegroundWindow(hwnd)
+        time.sleep(0.25)
+        foreground = window_title(u.GetForegroundWindow())
+        if any(mark in foreground for mark in auth_marks + viewer_marks):
+            break
+    else:
+        print("[agent] 前台窗口不是 RealVNC，跳过自动填写以免密码发错窗口", flush=True)
+        return
+    if _win32_type_password(password):
+        print("[agent] RealVNC 身份验证窗口已自动填写密码", flush=True)
+    else:
+        print("[agent] 自动填写失败（SendInput 被拒绝），请手动输入密码", flush=True)
+
+
 def _launch(argv) -> str:
     subprocess.Popen(argv, close_fds=not IS_WINDOWS)
+    return " ".join(str(item) for item in argv)
+
+
+def _launch_checked(argv, wait_s: float = 1.5) -> str:
+    """Launch a GUI client and surface an immediate exit as an error.
+
+    Radmin Viewer quits at once on a bad switch, a missing runtime or an
+    unreachable host. Plain Popen() still counts as "started", and the
+    /connect result page then closes itself, so the user never sees why the
+    connection failed. Watching the process briefly turns that into a real
+    error message with the exact command line to reproduce manually.
+    """
+    proc = subprocess.Popen(argv, close_fds=not IS_WINDOWS)
+    deadline = time.time() + wait_s
+    while time.time() < deadline:
+        rc = proc.poll()
+        if rc is not None:
+            raise RuntimeError(
+                f"客户端启动后 {wait_s:g} 秒内退出（退出码 {rc}），连接未建立。"
+                "常见原因：目标不可达、参数不被该版本支持、客户端缺少运行库。"
+                "可手动复现的命令行：" + " ".join(str(item) for item in argv))
+        time.sleep(0.1)
     return " ".join(str(item) for item in argv)
 
 
@@ -917,7 +1068,7 @@ def connect_host(host: dict, password: str, settings: dict | None = None,
         argv.append(colour)
         if settings.get("radmin_fullscreen", "1") == "1":
             argv.append("/fullscreen")
-        message = "已启动：" + _launch(argv)
+        message = "已启动：" + _launch_checked(argv)
         if settings.get("radmin_autologin", "1") == "1" and password:
             threading.Thread(target=_radmin_autologin,
                              args=(address, account, password), daemon=True).start()
@@ -925,12 +1076,28 @@ def connect_host(host: dict, password: str, settings: dict | None = None,
         return message
 
     if protocol in ("realvnc", "tightvnc"):
+        # TightVNC is retired: every VNC record now uses RealVNC Viewer.
+        # Legacy "tightvnc" rows stay valid (no data migration needed) but
+        # connect through exactly the same path.
         viewer = _find_client(settings, "vnc_path")
+        if Path(viewer).name.lower() == "tvnviewer.exe":
+            raise RuntimeError(
+                "VNC 记录统一使用 RealVNC Viewer：请在 WebUI「系统设置 → vnc_path」"
+                "改成 vncviewer.exe 的完整路径（TightVNC 已不再支持）。")
         target = f"{address}:{port}"
-        argv = [viewer, target]
-        if protocol == "tightvnc" and password:
-            argv.append(f"-password={password}")
-        return "已启动：" + _launch(argv)
+        argv = [viewer]
+        if account:
+            # Official RealVNC Viewer parameter (see "vncviewer -helpall").
+            # RealVNC has NO plaintext password switch, so the password is
+            # typed into its owner-drawn auth dialog by _realvnc_autologin.
+            argv.append(f"-UserName={account}")
+        argv.append(target)
+        message = "已启动：" + _launch(argv)
+        if password:
+            threading.Thread(target=_realvnc_autologin,
+                             args=(address, password), daemon=True).start()
+            message += "（后台自动填写 RealVNC 身份验证窗口）"
+        return message
 
     if protocol == "ftp":
         url = connection_url(host, password, settings, "ftp")
@@ -1349,8 +1516,9 @@ max-width:520px}}.ok{{color:#0f6e56}}.err{{color:#a32d2d}}
 code{{background:#f0f2f5;padding:2px 5px;border-radius:4px}}</style></head><body>
 <div class="card"><h2 class="{css_class}">{title}</h2>
 <p>{html.escape(message)}</p>
-<p style="color:#6b7684">此窗口可关闭。若客户端没弹出，请确认本机已安装对应远程客户端。</p>
-</div>{'<script>setTimeout(function(){window.close()},6000)</script>' if ok else ''}
+<p style="color:#6b7684">此窗口不会自动关闭，方便查看启动结果与报错；详细输出见启动 Agent 的那个控制台窗口。</p>
+<p><button onclick="window.close()" style="padding:6px 16px;cursor:pointer">关闭窗口</button></p>
+</div>
 </body></html>"""
             return self._reply(page)
 
