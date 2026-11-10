@@ -10,8 +10,6 @@ Group=acaiplus
 WorkingDirectory=/opt/remotemgrserver
 Environment=PYTHONUNBUFFERED=1
 Environment=TZ=Asia/Shanghai
-Environment=REMOTEMGR_DATA=/opt/remotemgrserver/dat
-Environment=REMOTEMGR_ENV=/opt/remotemgrserver/.env
 ExecStart=/opt/remotemgrserver/remotemgr-server
 Restart=always
 RestartSec=3
